@@ -17,22 +17,18 @@
 
 package org.apache.dolphinscheduler.server.master.processor.queue;
 
-import org.apache.dolphinscheduler.common.enums.Event;
-import org.apache.dolphinscheduler.common.enums.ExecutionStatus;
-import org.apache.dolphinscheduler.common.enums.StateEvent;
-import org.apache.dolphinscheduler.common.enums.StateEventType;
+import org.apache.dolphinscheduler.common.Constants;
 import org.apache.dolphinscheduler.common.thread.Stopper;
-import org.apache.dolphinscheduler.dao.entity.TaskInstance;
-import org.apache.dolphinscheduler.remote.command.DBTaskAckCommand;
-import org.apache.dolphinscheduler.remote.command.DBTaskResponseCommand;
+import org.apache.dolphinscheduler.common.thread.ThreadUtils;
+import org.apache.dolphinscheduler.server.master.config.MasterConfig;
 import org.apache.dolphinscheduler.server.master.runner.WorkflowExecuteThread;
 import org.apache.dolphinscheduler.service.process.ProcessService;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -42,7 +38,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import io.netty.channel.Channel;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 
 /**
  * task manager
@@ -66,39 +66,68 @@ public class TaskResponseService {
     @Autowired
     private ProcessService processService;
 
+    @Autowired
+    private MasterConfig masterConfig;
+
     /**
      * task response worker
      */
     private Thread taskResponseWorker;
 
-    private ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceMapper;
+    /**
+     * event handler
+     */
+    private Thread taskResponseEventHandler;
 
-    public void init(ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceMapper) {
-        if (this.processInstanceMapper == null) {
-            this.processInstanceMapper = processInstanceMapper;
+    private ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceMap;
+
+    private final ConcurrentHashMap<String, TaskResponsePersistThread> taskResponseEventHandlerMap = new ConcurrentHashMap<>();
+
+    private ListeningExecutorService listeningExecutorService;
+
+    private ExecutorService eventExecService;
+
+    /**
+     * task response mapper
+     */
+    private final ConcurrentHashMap<Integer, TaskResponsePersistThread> processTaskResponseMap = new ConcurrentHashMap<>();
+
+    public void init(ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceMap) {
+        if (this.processInstanceMap == null) {
+            this.processInstanceMap = processInstanceMap;
         }
     }
 
     @PostConstruct
     public void start() {
+        eventExecService = ThreadUtils.newDaemonFixedThreadExecutor("PersistEventState", masterConfig.getMasterPersistEventStateThreads());
+        this.listeningExecutorService = MoreExecutors.listeningDecorator(eventExecService);
         this.taskResponseWorker = new TaskResponseWorker();
-        this.taskResponseWorker.setName("StateEventResponseWorker");
+        this.taskResponseWorker.setName("TaskResponseWorker");
         this.taskResponseWorker.start();
+        this.taskResponseEventHandler = new TaskResponseEventHandler();
+        this.taskResponseEventHandler.setName("TaskResponseEventHandler");
+        this.taskResponseEventHandler.start();
     }
 
     @PreDestroy
     public void stop() {
         try {
             this.taskResponseWorker.interrupt();
-            if (!eventQueue.isEmpty()) {
-                List<TaskResponseEvent> remainEvents = new ArrayList<>(eventQueue.size());
-                eventQueue.drainTo(remainEvents);
-                for (TaskResponseEvent event : remainEvents) {
-                    this.persist(event);
-                }
-            }
+            this.taskResponseEventHandler.interrupt();
         } catch (Exception e) {
             logger.error("stop error:", e);
+        }
+        this.eventExecService.shutdown();
+        long waitSec = 5;
+        boolean terminated = false;
+        try {
+            terminated = eventExecService.awaitTermination(waitSec, TimeUnit.SECONDS);
+        } catch (InterruptedException ignore) {
+            Thread.currentThread().interrupt();
+        }
+        if (!terminated) {
+            logger.warn("TaskResponseService: eventExecService shutdown without terminated: {}s, increase await time", waitSec);
         }
     }
 
@@ -110,6 +139,7 @@ public class TaskResponseService {
     public void addResponse(TaskResponseEvent taskResponseEvent) {
         try {
             eventQueue.put(taskResponseEvent);
+            logger.debug("eventQueue size:{}", eventQueue.size());
         } catch (InterruptedException e) {
             logger.error("put task : {} error :{}", taskResponseEvent, e);
             Thread.currentThread().interrupt();
@@ -123,12 +153,26 @@ public class TaskResponseService {
 
         @Override
         public void run() {
-
             while (Stopper.isRunning()) {
                 try {
                     // if not task , blocking here
                     TaskResponseEvent taskResponseEvent = eventQueue.take();
-                    persist(taskResponseEvent);
+                    if (processInstanceMap.containsKey(taskResponseEvent.getProcessInstanceId())
+                            && !processTaskResponseMap.containsKey(taskResponseEvent.getProcessInstanceId())) {
+                        TaskResponsePersistThread taskResponsePersistThread = new TaskResponsePersistThread(
+                                processService, processInstanceMap, taskResponseEvent.getProcessInstanceId());
+                        processTaskResponseMap.put(taskResponseEvent.getProcessInstanceId(), taskResponsePersistThread);
+                    }
+                    TaskResponsePersistThread taskResponsePersistThread = processTaskResponseMap.get(taskResponseEvent.getProcessInstanceId());
+                    if (null != taskResponsePersistThread) {
+                        if (taskResponsePersistThread.addEvent(taskResponseEvent)) {
+                            logger.debug("submit task response persist queue success, task instance id:{},process instance id:{}, state:{} ",
+                                    taskResponseEvent.getTaskInstanceId(), taskResponseEvent.getProcessInstanceId(), taskResponseEvent.getState());
+                        } else {
+                            logger.error("submit task response persist queue error, task instance id:{},process instance id:{} ",
+                                    taskResponseEvent.getTaskInstanceId(), taskResponseEvent.getProcessInstanceId());
+                        }
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -141,67 +185,68 @@ public class TaskResponseService {
     }
 
     /**
-     * persist  taskResponseEvent
-     *
-     * @param taskResponseEvent taskResponseEvent
+     * event handler thread
      */
-    private void persist(TaskResponseEvent taskResponseEvent) {
-        Event event = taskResponseEvent.getEvent();
-        Channel channel = taskResponseEvent.getChannel();
+    class TaskResponseEventHandler extends Thread {
 
-        TaskInstance taskInstance = processService.findTaskInstanceById(taskResponseEvent.getTaskInstanceId());
-        switch (event) {
-            case ACK:
+        @Override
+        public void run() {
+            logger.info("event handler thread started");
+            while (Stopper.isRunning()) {
                 try {
-                    if (taskInstance != null) {
-                        ExecutionStatus status = taskInstance.getState().typeIsFinished() ? taskInstance.getState() : taskResponseEvent.getState();
-                        processService.changeTaskState(taskInstance, status,
-                                taskResponseEvent.getStartTime(),
-                                taskResponseEvent.getWorkerAddress(),
-                                taskResponseEvent.getExecutePath(),
-                                taskResponseEvent.getLogPath(),
-                                taskResponseEvent.getTaskInstanceId());
-                    }
-                    // if taskInstance is null (maybe deleted) . retry will be meaningless . so ack success
-                    DBTaskAckCommand taskAckCommand = new DBTaskAckCommand(ExecutionStatus.SUCCESS.getCode(), taskResponseEvent.getTaskInstanceId());
-                    channel.writeAndFlush(taskAckCommand.convert2Command());
+                    eventHandler();
+
+                    TimeUnit.MILLISECONDS.sleep(Constants.SLEEP_TIME_MILLIS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 } catch (Exception e) {
-                    logger.error("worker ack master error", e);
-                    DBTaskAckCommand taskAckCommand = new DBTaskAckCommand(ExecutionStatus.FAILURE.getCode(), -1);
-                    channel.writeAndFlush(taskAckCommand.convert2Command());
+                    logger.error("event handler thread error", e);
                 }
-                break;
-            case RESULT:
-                try {
-                    if (taskInstance != null) {
-                        processService.changeTaskState(taskInstance, taskResponseEvent.getState(),
-                                taskResponseEvent.getEndTime(),
-                                taskResponseEvent.getProcessId(),
-                                taskResponseEvent.getAppIds(),
-                                taskResponseEvent.getTaskInstanceId(),
-                                taskResponseEvent.getVarPool()
-                        );
-                    }
-                    // if taskInstance is null (maybe deleted) . retry will be meaningless . so response success
-                    DBTaskResponseCommand taskResponseCommand = new DBTaskResponseCommand(ExecutionStatus.SUCCESS.getCode(), taskResponseEvent.getTaskInstanceId());
-                    channel.writeAndFlush(taskResponseCommand.convert2Command());
-                } catch (Exception e) {
-                    logger.error("worker response master error", e);
-                    DBTaskResponseCommand taskResponseCommand = new DBTaskResponseCommand(ExecutionStatus.FAILURE.getCode(), -1);
-                    channel.writeAndFlush(taskResponseCommand.convert2Command());
-                }
-                break;
-            default:
-                throw new IllegalArgumentException("invalid event type : " + event);
+            }
         }
-        WorkflowExecuteThread workflowExecuteThread = this.processInstanceMapper.get(taskResponseEvent.getProcessInstanceId());
-        if (workflowExecuteThread != null) {
-            StateEvent stateEvent = new StateEvent();
-            stateEvent.setProcessInstanceId(taskResponseEvent.getProcessInstanceId());
-            stateEvent.setTaskInstanceId(taskResponseEvent.getTaskInstanceId());
-            stateEvent.setExecutionStatus(taskResponseEvent.getState());
-            stateEvent.setType(StateEventType.TASK_STATE_CHANGE);
-            workflowExecuteThread.addStateEvent(stateEvent);
+
+        private void eventHandler() {
+
+            for (TaskResponsePersistThread taskResponsePersistThread: processTaskResponseMap.values()) {
+
+                if (taskResponseEventHandlerMap.containsKey(taskResponsePersistThread.getKey())) {
+                    continue;
+                }
+                if (taskResponsePersistThread.eventSize() == 0) {
+                    if (!processInstanceMap.containsKey(taskResponsePersistThread.getProcessInstanceId())) {
+                        processTaskResponseMap.remove(taskResponsePersistThread.getProcessInstanceId());
+                        logger.info("remove process instance: {}", taskResponsePersistThread.getProcessInstanceId());
+                    }
+                    continue;
+                }
+                logger.info("already exists handler process size:{}", taskResponseEventHandlerMap.size());
+                taskResponseEventHandlerMap.put(taskResponsePersistThread.getKey(), taskResponsePersistThread);
+
+                ListenableFuture future = listeningExecutorService.submit(taskResponsePersistThread);
+                FutureCallback futureCallback = new FutureCallback() {
+                    @Override
+                    public void onSuccess(Object o) {
+                        logger.info("persist events {} succeeded.", taskResponsePersistThread.getProcessInstanceId());
+                        if (!processInstanceMap.containsKey(taskResponsePersistThread.getProcessInstanceId())) {
+                            processTaskResponseMap.remove(taskResponsePersistThread.getProcessInstanceId());
+                            logger.info("remove process instance: {}", taskResponsePersistThread.getProcessInstanceId());
+                        }
+                        taskResponseEventHandlerMap.remove(taskResponsePersistThread.getKey());
+                    }
+
+                    @Override
+                    public void onFailure(Throwable throwable) {
+                        logger.error("persist events failed: {}", throwable);
+                        if (!processInstanceMap.containsKey(taskResponsePersistThread.getProcessInstanceId())) {
+                            processTaskResponseMap.remove(taskResponsePersistThread.getProcessInstanceId());
+                            logger.info("remove process instance: {}", taskResponsePersistThread.getProcessInstanceId());
+                        }
+                        taskResponseEventHandlerMap.remove(taskResponsePersistThread.getKey());
+                    }
+                };
+                Futures.addCallback(future, futureCallback, listeningExecutorService);
+            }
         }
     }
 

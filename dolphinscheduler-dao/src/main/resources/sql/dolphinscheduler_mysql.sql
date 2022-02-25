@@ -511,7 +511,9 @@ CREATE TABLE `t_ds_task_definition_log` (
   `operate_time` datetime DEFAULT NULL COMMENT 'operate time',
   `create_time` datetime NOT NULL COMMENT 'create time',
   `update_time` datetime NOT NULL COMMENT 'update time',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_code_version` (`code`,`version`),
+  KEY `idx_project_code` (`project_code`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
 -- ----------------------------
@@ -532,7 +534,8 @@ CREATE TABLE `t_ds_process_task_relation` (
   `condition_params` text COMMENT 'condition params(json)',
   `create_time` datetime NOT NULL COMMENT 'create time',
   `update_time` datetime NOT NULL COMMENT 'update time',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_code` (`project_code`,`process_definition_code`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
 -- ----------------------------
@@ -555,7 +558,8 @@ CREATE TABLE `t_ds_process_task_relation_log` (
   `operate_time` datetime DEFAULT NULL COMMENT 'operate time',
   `create_time` datetime NOT NULL COMMENT 'create time',
   `update_time` datetime NOT NULL COMMENT 'update time',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_process_code_version` (`process_definition_code`,`process_definition_version`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
 -- ----------------------------
@@ -596,6 +600,7 @@ CREATE TABLE `t_ds_process_instance` (
   `var_pool` longtext COMMENT 'var_pool',
   `dry_run` tinyint(4) DEFAULT '0' COMMENT 'dry run flag：0 normal, 1 dry run',
   `next_process_instance_id` int(11) DEFAULT '0' COMMENT 'serial queue next processInstanceId',
+  `restart_time` datetime DEFAULT NULL COMMENT 'process instance restart time',
   PRIMARY KEY (`id`),
   KEY `process_instance_index` (`process_definition_code`,`id`) USING BTREE,
   KEY `start_time_index` (`start_time`,`end_time`) USING BTREE
@@ -819,8 +824,8 @@ CREATE TABLE `t_ds_task_instance` (
   `alert_flag` tinyint(4) DEFAULT NULL COMMENT 'whether alert',
   `retry_times` int(4) DEFAULT '0' COMMENT 'task retry times',
   `pid` int(4) DEFAULT NULL COMMENT 'pid of task',
-  `app_link` text COMMENT 'yarn app id',
-  `task_params` text COMMENT 'job custom parameters',
+  `app_link` longtext COMMENT 'yarn app id',
+  `task_params` longtext COMMENT 'job custom parameters',
   `flag` tinyint(4) DEFAULT '1' COMMENT '0 not available, 1 available',
   `retry_interval` int(4) DEFAULT NULL COMMENT 'retry interval when task failed ',
   `max_retry_times` int(2) DEFAULT NULL COMMENT 'max retry times',
@@ -835,6 +840,7 @@ CREATE TABLE `t_ds_task_instance` (
   `dry_run` tinyint(4) DEFAULT '0' COMMENT 'dry run flag: 0 normal, 1 dry run',
   PRIMARY KEY (`id`),
   KEY `process_instance_id` (`process_instance_id`) USING BTREE,
+  KEY `idx_code_version` (`task_code`, `task_definition_version`) USING BTREE,
   CONSTRAINT `foreign_key_instance_id` FOREIGN KEY (`process_instance_id`) REFERENCES `t_ds_process_instance` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
@@ -940,7 +946,7 @@ CREATE TABLE `t_ds_version` (
 -- ----------------------------
 -- Records of t_ds_version
 -- ----------------------------
-INSERT INTO `t_ds_version` VALUES ('1', '2.0.2');
+INSERT INTO `t_ds_version` VALUES ('1', '2.0.4');
 
 
 -- ----------------------------

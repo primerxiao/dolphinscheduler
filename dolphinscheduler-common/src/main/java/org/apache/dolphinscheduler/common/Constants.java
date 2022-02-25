@@ -53,7 +53,7 @@ public final class Constants {
     public static final String ORG_QUARTZ_JOBSTORE_ACQUIRETRIGGERSWITHINLOCK = "org.quartz.jobStore.acquireTriggersWithinLock";
     public static final String ORG_QUARTZ_JOBSTORE_DATASOURCE = "org.quartz.jobStore.dataSource";
     public static final String ORG_QUARTZ_DATASOURCE_MYDS_CONNECTIONPROVIDER_CLASS = "org.quartz.dataSource.myDs.connectionProvider.class";
-
+    public static final String ORG_QUARTZ_SCHEDULER_BATCHTRIGGERACQUISTITIONMAXCOUNT = "org.quartz.scheduler.batchTriggerAcquisitionMaxCount";
     /**
      * quartz config default value
      */
@@ -66,6 +66,7 @@ public final class Constants {
     public static final String QUARTZ_INSTANCENAME = "DolphinScheduler";
     public static final String QUARTZ_INSTANCEID = "AUTO";
     public static final String QUARTZ_ACQUIRETRIGGERSWITHINLOCK = "true";
+    public static final String QUARTZ_BATCHTRIGGERACQUISTITIONMAXCOUNT = "100";
 
     /**
      * common properties path
@@ -307,12 +308,7 @@ public final class Constants {
      * user name regex
      */
     public static final Pattern REGEX_USER_NAME = Pattern.compile("^[a-zA-Z0-9._-]{3,39}$");
-
-    /**
-     * email regex
-     */
-    public static final Pattern REGEX_MAIL_NAME = Pattern.compile("^([a-z0-9A-Z]+[_|\\-|\\.]?)+[a-z0-9A-Z]@([a-z0-9A-Z]+(-[a-z0-9A-Z]+)?\\.)+[a-zA-Z]{2,}$");
-
+    
     /**
      * default display rows
      */
@@ -339,6 +335,11 @@ public final class Constants {
      * default admin permission
      */
     public static final int DEFAULT_ADMIN_PERMISSION = 7;
+
+    /**
+     * default hash map size
+     */
+    public static final int DEFAULT_HASH_MAP_SIZE = 16;
 
 
     /**
@@ -1089,4 +1090,5 @@ public final class Constants {
     public static final int DRY_RUN_FLAG_NO = 0;
     public static final int DRY_RUN_FLAG_YES = 1;
 
+    public static final String CACHE_KEY_VALUE_ALL = "'all'";
 }

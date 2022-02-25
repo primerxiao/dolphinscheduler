@@ -89,7 +89,7 @@
             size="small"
             v-model="sourceType"
             :disabled="isDetails"
-            @change="_handleSourceTypeChange">
+            @change="(val)=> _handleSourceTypeChange({label: val})">
             <el-option
               v-for="city in sourceTypeList"
               :key="city.code"
@@ -323,6 +323,18 @@
           <div slot="text">{{$t('OverWriteSrc')}}</div>
           <div slot="content">
             <el-switch v-model="targetHiveParams.hiveOverWrite" size="small"></el-switch>
+          </div>
+        </m-list-box>
+        <m-list-box>
+          <div slot="text">{{$t('Hive Target Dir')}}</div>
+          <div slot="content">
+            <el-input
+              :disabled="isDetails"
+              type="text"
+              size="small"
+              v-model="targetHiveParams.hiveTargetDir"
+              :placeholder="$t('Please enter hive target dir')">
+            </el-input>
           </div>
         </m-list-box>
         <m-list-box>
@@ -691,6 +703,7 @@
           dropDelimiter: false,
           hiveOverWrite: true,
           replaceDelimiter: '',
+          hiveTargetDir: '',
           hivePartitionKey: '',
           hivePartitionValue: ''
         },

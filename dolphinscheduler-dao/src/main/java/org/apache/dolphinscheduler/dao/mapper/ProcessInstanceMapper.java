@@ -44,6 +44,14 @@ public interface ProcessInstanceMapper extends BaseMapper<ProcessInstance> {
     ProcessInstance queryDetailById(@Param("processId") int processId);
 
     /**
+     * query process instance host by stateArray
+     *
+     * @param stateArray
+     * @return
+     */
+    List<String> queryNeedFailoverProcessInstanceHost(@Param("states") int[] stateArray);
+
+    /**
      * query process instance by host and stateArray
      *
      * @param host host
@@ -213,14 +221,19 @@ public interface ProcessInstanceMapper extends BaseMapper<ProcessInstance> {
     /**
      * query top n process instance order by running duration
      *
+     * @param size size
+     * @param startTime start time
+     * @param startTime end time
      * @param status process instance status
+     * @param projectCode project code
      * @return ProcessInstance list
      */
 
     List<ProcessInstance> queryTopNProcessInstance(@Param("size") int size,
                                                    @Param("startTime") Date startTime,
                                                    @Param("endTime") Date endTime,
-                                                   @Param("status") ExecutionStatus status);
+                                                   @Param("status") ExecutionStatus status,
+                                                   @Param("projectCode") long projectCode);
 
     /**
      * query process instance by processDefinitionCode and stateArray

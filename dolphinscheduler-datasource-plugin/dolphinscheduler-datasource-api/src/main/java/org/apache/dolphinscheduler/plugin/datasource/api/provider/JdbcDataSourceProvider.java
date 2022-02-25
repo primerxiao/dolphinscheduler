@@ -48,7 +48,7 @@ public class JdbcDataSourceProvider {
         loaderJdbcDriver(classLoader, properties, dbType);
 
         dataSource.setDriverClassName(properties.getDriverClassName());
-        dataSource.setJdbcUrl(properties.getJdbcUrl());
+        dataSource.setJdbcUrl(DatasourceUtil.getJdbcUrl(dbType, properties));
         dataSource.setUsername(properties.getUser());
         dataSource.setPassword(PasswordUtils.decodePassword(properties.getPassword()));
 
@@ -67,18 +67,19 @@ public class JdbcDataSourceProvider {
     /**
      * @return One Session Jdbc DataSource
      */
-    public static HikariDataSource createOneSessionJdbcDataSource(BaseConnectionParam properties) {
+    public static HikariDataSource createOneSessionJdbcDataSource(BaseConnectionParam properties, DbType dbType) {
         logger.info("Creating OneSession HikariDataSource pool for maxActive:{}", PropertyUtils.getInt(Constants.SPRING_DATASOURCE_MAX_ACTIVE, 50));
 
         HikariDataSource dataSource = new HikariDataSource();
 
         dataSource.setDriverClassName(properties.getDriverClassName());
-        dataSource.setJdbcUrl(properties.getJdbcUrl());
+        dataSource.setJdbcUrl(DatasourceUtil.getJdbcUrl(dbType, properties));
         dataSource.setUsername(properties.getUser());
         dataSource.setPassword(PasswordUtils.decodePassword(properties.getPassword()));
 
-        dataSource.setMinimumIdle(1);
-        dataSource.setMaximumPoolSize(1);
+        Boolean isOneSession = PropertyUtils.getBoolean(Constants.SUPPORT_HIVE_ONE_SESSION, false);
+        dataSource.setMinimumIdle(isOneSession ? 1 : PropertyUtils.getInt(Constants.SPRING_DATASOURCE_MIN_IDLE, 5));
+        dataSource.setMaximumPoolSize(isOneSession ? 1 : PropertyUtils.getInt(Constants.SPRING_DATASOURCE_MAX_ACTIVE, 50));
         dataSource.setConnectionTestQuery(properties.getValidationQuery());
 
         if (properties.getProps() != null) {
@@ -98,12 +99,11 @@ public class JdbcDataSourceProvider {
                 logger.warn("Jdbc driver loading error. Driver {} cannot accept url.", drv);
                 throw new RuntimeException("Jdbc driver loading error.");
             }
-            if (dbType.equals(DbType.MYSQL)) {
-                if (driver.getMajorVersion() >= 8) {
-                    properties.setDriverClassName(drv);
-                } else {
-                    properties.setDriverClassName(Constants.COM_MYSQL_JDBC_DRIVER);
-                }
+            //Compatible historical version data source connection information
+            if (dbType.equals(DbType.MYSQL) && driver.getMajorVersion() <= 8) {
+                properties.setDriverClassName(Constants.COM_MYSQL_JDBC_DRIVER);
+            } else {
+                properties.setDriverClassName(drv);
             }
         } catch (final Exception e) {
             logger.warn("The specified driver not suitable.");

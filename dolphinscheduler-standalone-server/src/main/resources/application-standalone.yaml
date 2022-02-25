@@ -18,6 +18,19 @@
 spring:
   application:
     name: standalone-server
+  cache:
+    # default unable cache, you can enable by `type: caffeine`
+    type: none
+    cache-names:
+      - tenant
+      - user
+      - processDefinition
+      - processTaskRelation
+      - taskDefinition
+      - workerGroup
+      - schedule
+    caffeine:
+      spec: maximumSize=100,expireAfterWrite=300s,recordStats
 
 server:
   port: 12345
@@ -32,3 +45,11 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+logging:
+  level:
+    org:
+      apache:
+        zookeeper: WARN
+        hbase: WARN
+        hadoop: WARN

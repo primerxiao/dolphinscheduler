@@ -146,7 +146,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
 
         // check work flow define release state
         ProcessDefinition processDefinition = processDefinitionMapper.queryByCode(processDefineCode);
-        result = executorService.checkProcessDefinitionValid(processDefinition, processDefineCode);
+        result = executorService.checkProcessDefinitionValid(projectCode,processDefinition, processDefineCode);
         if (result.get(Constants.STATUS) != Status.SUCCESS) {
             return result;
         }
@@ -247,7 +247,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
         }
 
         ProcessDefinition processDefinition = processDefinitionMapper.queryByCode(schedule.getProcessDefinitionCode());
-        if (processDefinition == null) {
+        if (processDefinition == null || projectCode != processDefinition.getProjectCode()) {
             putMsg(result, Status.PROCESS_DEFINE_NOT_EXIST, schedule.getProcessDefinitionCode());
             return result;
         }
@@ -296,7 +296,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
             return result;
         }
         ProcessDefinition processDefinition = processDefinitionMapper.queryByCode(scheduleObj.getProcessDefinitionCode());
-        if (processDefinition == null) {
+        if (processDefinition == null || projectCode != processDefinition.getProjectCode()) {
             putMsg(result, Status.PROCESS_DEFINE_NOT_EXIST, scheduleObj.getProcessDefinitionCode());
             return result;
         }
@@ -363,6 +363,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
                     return result;
             }
         } catch (Exception e) {
+            logger.error("set online failure", e);
             result.put(Constants.MSG, scheduleStatus == ReleaseState.ONLINE ? "set online failure" : "set offline failure");
             throw new ServiceException(result.get(Constants.MSG).toString());
         }
@@ -396,7 +397,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
         }
 
         ProcessDefinition processDefinition = processDefinitionMapper.queryByCode(processDefineCode);
-        if (processDefinition == null) {
+        if (processDefinition == null || projectCode != processDefinition.getProjectCode()) {
             putMsg(result, Status.PROCESS_DEFINE_NOT_EXIST, processDefineCode);
             return result;
         }
@@ -606,7 +607,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
         }
 
         ProcessDefinition processDefinition = processDefinitionMapper.queryByCode(processDefinitionCode);
-        if (processDefinition == null) {
+        if (processDefinition == null || projectCode != processDefinition.getProjectCode()) {
             putMsg(result, Status.PROCESS_DEFINE_NOT_EXIST, processDefinitionCode);
             return result;
         }

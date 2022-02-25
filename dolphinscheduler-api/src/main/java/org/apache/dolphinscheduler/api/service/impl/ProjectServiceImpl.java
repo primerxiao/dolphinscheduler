@@ -110,7 +110,7 @@ public class ProjectServiceImpl extends BaseServiceImpl implements ProjectServic
         }
 
         if (projectMapper.insert(project) > 0) {
-            result.put(Constants.DATA_LIST, project.getId());
+            result.put(Constants.DATA_LIST, project);
             putMsg(result, Status.SUCCESS);
         } else {
             putMsg(result, Status.CREATE_PROJECT_ERROR);
@@ -128,6 +128,21 @@ public class ProjectServiceImpl extends BaseServiceImpl implements ProjectServic
     public Map<String, Object> queryByCode(User loginUser, long projectCode) {
         Map<String, Object> result = new HashMap<>();
         Project project = projectMapper.queryByCode(projectCode);
+        boolean hasProjectAndPerm = hasProjectAndPerm(loginUser, project, result);
+        if (!hasProjectAndPerm) {
+            return result;
+        }
+        if (project != null) {
+            result.put(Constants.DATA_LIST, project);
+            putMsg(result, Status.SUCCESS);
+        }
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> queryByName(User loginUser, String projectName) {
+        Map<String, Object> result = new HashMap<>();
+        Project project = projectMapper.queryByName(projectName);
         boolean hasProjectAndPerm = hasProjectAndPerm(loginUser, project, result);
         if (!hasProjectAndPerm) {
             return result;
@@ -386,6 +401,31 @@ public class ProjectServiceImpl extends BaseServiceImpl implements ProjectServic
         result.put(Constants.DATA_LIST, projects);
         putMsg(result, Status.SUCCESS);
 
+        return result;
+    }
+
+    /**
+     * query authorized user
+     *
+     * @param loginUser     login user
+     * @param projectCode   project code
+     * @return users        who have permission for the specified project
+     */
+    @Override
+    public Map<String, Object> queryAuthorizedUser(User loginUser, Long projectCode) {
+        Map<String, Object> result = new HashMap<>();
+
+        // 1. check read permission
+        Project project = this.projectMapper.queryByCode(projectCode);
+        boolean hasProjectAndPerm = this.hasProjectAndPerm(loginUser, project, result);
+        if (!hasProjectAndPerm) {
+            return result;
+        }
+
+        // 2. query authorized user list
+        List<User> users = this.userMapper.queryAuthedUserListByProjectId(project.getId());
+        result.put(Constants.DATA_LIST, users);
+        this.putMsg(result, Status.SUCCESS);
         return result;
     }
 

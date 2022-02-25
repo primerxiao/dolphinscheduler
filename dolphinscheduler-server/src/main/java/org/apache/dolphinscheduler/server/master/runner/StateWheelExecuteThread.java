@@ -49,15 +49,30 @@ public class StateWheelExecuteThread extends Thread {
     private ConcurrentHashMap<Integer, TaskInstance> taskInstanceRetryCheckList;
     private ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceExecMaps;
 
+    /**
+     * start process failed map
+     */
+    private final ConcurrentHashMap<Integer, WorkflowExecuteThread> startProcessFailedMap;
+
     private int stateCheckIntervalSecs;
 
-    public StateWheelExecuteThread(ProcessService processService,
-                                   ConcurrentHashMap<Integer, ProcessInstance> processInstanceTimeoutCheckList,
-                                   ConcurrentHashMap<Integer, TaskInstance> taskInstanceTimeoutCheckList,
-                                   ConcurrentHashMap<Integer, TaskInstance> taskInstanceRetryCheckList,
-                                   ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceExecMaps,
-                                   int stateCheckIntervalSecs) {
+    /**
+     * master exec service
+     */
+    private MasterExecService masterExecService;
+
+    public StateWheelExecuteThread(
+            MasterExecService masterExecService,
+            ProcessService processService,
+            ConcurrentHashMap<Integer, WorkflowExecuteThread> startProcessFailedMap,
+            ConcurrentHashMap<Integer, ProcessInstance> processInstanceTimeoutCheckList,
+            ConcurrentHashMap<Integer, TaskInstance> taskInstanceTimeoutCheckList,
+            ConcurrentHashMap<Integer, TaskInstance> taskInstanceRetryCheckList,
+            ConcurrentHashMap<Integer, WorkflowExecuteThread> processInstanceExecMaps,
+            int stateCheckIntervalSecs) {
+        this.masterExecService = masterExecService;
         this.processService = processService;
+        this.startProcessFailedMap = startProcessFailedMap;
         this.processInstanceTimeoutCheckList = processInstanceTimeoutCheckList;
         this.taskInstanceTimeoutCheckList = taskInstanceTimeoutCheckList;
         this.taskInstanceRetryCheckList = taskInstanceRetryCheckList;
@@ -71,6 +86,7 @@ public class StateWheelExecuteThread extends Thread {
         logger.info("state wheel thread start");
         while (Stopper.isRunning()) {
             try {
+                check4StartProcessFailed();
                 checkTask4Timeout();
                 checkTask4Retry();
                 checkProcess4Timeout();
@@ -118,12 +134,11 @@ public class StateWheelExecuteThread extends Thread {
         }
 
         for (TaskInstance taskInstance : this.taskInstanceRetryCheckList.values()) {
-            if (taskInstance.taskCanRetry() && taskInstance.retryTaskIntervalOverTime()) {
+            if (!taskInstance.getState().typeIsFinished() && (taskInstance.isSubProcess() || taskInstance.isDependTask())) {
+                addTaskStateChangeEvent(taskInstance);
+            } else if (taskInstance.taskCanRetry() && taskInstance.retryTaskIntervalOverTime()) {
                 addTaskStateChangeEvent(taskInstance);
                 taskInstanceRetryCheckList.remove(taskInstance.getId());
-            }
-            if (taskInstance.isSubProcess() || taskInstance.isDependTask()) {
-                addTaskStateChangeEvent(taskInstance);
             }
         }
     }
@@ -177,4 +192,12 @@ public class StateWheelExecuteThread extends Thread {
         workflowExecuteThread.addStateEvent(stateEvent);
     }
 
+    private void check4StartProcessFailed() {
+        if (startProcessFailedMap.isEmpty()) {
+            return;
+        }
+        for (WorkflowExecuteThread workflowExecuteThread : this.startProcessFailedMap.values()) {
+            masterExecService.execute(workflowExecuteThread);
+        }
+    }
 }

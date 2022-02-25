@@ -60,8 +60,14 @@ public class MasterConfig {
     @Value("${master.reserved.memory:0.3}")
     private double masterReservedMemory;
 
-    @Value("${master.cache.process.definition:true}")
-    private boolean masterCacheProcessDefinition;
+    @Value("${master.failover.interval:10}")
+    private int failoverInterval;
+
+    @Value("${master.kill.yarn.job.when.handle.failover:true}")
+    private boolean masterKillYarnJobWhenHandleFailOver;
+
+    @Value("${master.persist.event.state.threads:10}")
+    private int masterPersistEventStateThreads;
 
     public int getListenPort() {
         return listenPort;
@@ -154,12 +160,27 @@ public class MasterConfig {
         this.stateWheelInterval = stateWheelInterval;
     }
 
-    public boolean getMasterCacheProcessDefinition() {
-        return masterCacheProcessDefinition;
+    public int getFailoverInterval() {
+        return failoverInterval;
     }
 
-    public void setMasterCacheProcessDefinition(boolean masterCacheProcessDefinition) {
-        this.masterCacheProcessDefinition = masterCacheProcessDefinition;
+    public void setFailoverInterval(int failoverInterval) {
+        this.failoverInterval = failoverInterval;
     }
 
+    public boolean getMasterKillYarnJobWhenHandleFailOver() {
+        return masterKillYarnJobWhenHandleFailOver;
+    }
+
+    public void setMasterKillYarnJobWhenHandleFailOver(boolean masterKillYarnJobWhenHandleFailOver) {
+        this.masterKillYarnJobWhenHandleFailOver = masterKillYarnJobWhenHandleFailOver;
+    }
+
+    public int getMasterPersistEventStateThreads() {
+        return masterPersistEventStateThreads;
+    }
+
+    public void setMasterPersistEventStateThreads(int masterPersistEventStateThreads) {
+        this.masterPersistEventStateThreads = masterPersistEventStateThreads;
+    }
 }

@@ -17,6 +17,8 @@
 
 package org.apache.dolphinscheduler.server.master;
 
+import static org.apache.dolphinscheduler.common.Constants.SPRING_DATASOURCE_DRIVER_CLASS_NAME;
+
 import org.apache.dolphinscheduler.common.Constants;
 import org.apache.dolphinscheduler.common.IStoppable;
 import org.apache.dolphinscheduler.common.thread.Stopper;
@@ -25,20 +27,20 @@ import org.apache.dolphinscheduler.remote.NettyRemotingServer;
 import org.apache.dolphinscheduler.remote.command.CommandType;
 import org.apache.dolphinscheduler.remote.config.NettyServerConfig;
 import org.apache.dolphinscheduler.server.master.config.MasterConfig;
+import org.apache.dolphinscheduler.server.master.processor.CacheProcessor;
 import org.apache.dolphinscheduler.server.master.processor.StateEventProcessor;
 import org.apache.dolphinscheduler.server.master.processor.TaskAckProcessor;
 import org.apache.dolphinscheduler.server.master.processor.TaskKillResponseProcessor;
 import org.apache.dolphinscheduler.server.master.processor.TaskResponseProcessor;
 import org.apache.dolphinscheduler.server.master.registry.MasterRegistryClient;
 import org.apache.dolphinscheduler.server.master.runner.EventExecuteService;
-import org.apache.dolphinscheduler.server.master.runner.WorkflowExecuteThread;
+import org.apache.dolphinscheduler.server.master.runner.FailoverExecuteThread;
 import org.apache.dolphinscheduler.server.master.runner.MasterSchedulerService;
+import org.apache.dolphinscheduler.server.master.runner.WorkflowExecuteThread;
 import org.apache.dolphinscheduler.service.bean.SpringApplicationContext;
 import org.apache.dolphinscheduler.service.quartz.QuartzExecutors;
 
 import java.util.concurrent.ConcurrentHashMap;
-
-import javax.annotation.PostConstruct;
 
 import org.quartz.SchedulerException;
 import org.slf4j.Logger;
@@ -47,11 +49,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.context.event.EventListener;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
-
-import static org.apache.dolphinscheduler.common.Constants.SPRING_DATASOURCE_DRIVER_CLASS_NAME;
 
 /**
  *  master server
@@ -65,8 +68,8 @@ import static org.apache.dolphinscheduler.common.Constants.SPRING_DATASOURCE_DRI
     })
 })
 @EnableTransactionManagement
+@EnableCaching
 public class MasterServer implements IStoppable {
-
     /**
      * logger of MasterServer
      */
@@ -105,6 +108,9 @@ public class MasterServer implements IStoppable {
     @Autowired
     private EventExecuteService eventExecuteService;
 
+    @Autowired
+    private FailoverExecuteThread failoverExecuteThread;
+
     @Value("${spring.datasource.driver-class-name}")
     private String driverClassName;
 
@@ -123,8 +129,8 @@ public class MasterServer implements IStoppable {
     /**
      * run master server
      */
-    @PostConstruct
-    public void run() {
+    @EventListener
+    public void run(ApplicationReadyEvent ignored) {
         PropertyUtils.setValue(SPRING_DATASOURCE_DRIVER_CLASS_NAME, driverClassName);
 
         // init remoting server
@@ -135,18 +141,21 @@ public class MasterServer implements IStoppable {
         ackProcessor.init(processInstanceExecMaps);
         TaskResponseProcessor taskResponseProcessor = new TaskResponseProcessor();
         taskResponseProcessor.init(processInstanceExecMaps);
+        TaskKillResponseProcessor taskKillResponseProcessor = new TaskKillResponseProcessor();
+        taskKillResponseProcessor.init(processInstanceExecMaps);
         StateEventProcessor stateEventProcessor = new StateEventProcessor();
         stateEventProcessor.init(processInstanceExecMaps);
         this.nettyRemotingServer.registerProcessor(CommandType.TASK_EXECUTE_RESPONSE, taskResponseProcessor);
         this.nettyRemotingServer.registerProcessor(CommandType.TASK_EXECUTE_ACK, ackProcessor);
-        this.nettyRemotingServer.registerProcessor(CommandType.TASK_KILL_RESPONSE, new TaskKillResponseProcessor());
+        this.nettyRemotingServer.registerProcessor(CommandType.TASK_KILL_RESPONSE, taskKillResponseProcessor);
         this.nettyRemotingServer.registerProcessor(CommandType.STATE_EVENT_REQUEST, stateEventProcessor);
+        this.nettyRemotingServer.registerProcessor(CommandType.CACHE_EXPIRE, new CacheProcessor());
         this.nettyRemotingServer.start();
 
         // self tolerant
         this.masterRegistryClient.init(this.processInstanceExecMaps);
-        this.masterRegistryClient.start();
         this.masterRegistryClient.setRegistryStoppable(this);
+        this.masterRegistryClient.start();
 
         this.eventExecuteService.init(this.processInstanceExecMaps);
         this.eventExecuteService.start();
@@ -154,6 +163,8 @@ public class MasterServer implements IStoppable {
         this.masterSchedulerService.init(this.processInstanceExecMaps);
 
         this.masterSchedulerService.start();
+
+        this.failoverExecuteThread.start();
 
         // start QuartzExecutors
         // what system should do if exception
@@ -217,8 +228,18 @@ public class MasterServer implements IStoppable {
             }
             // close spring Context and will invoke method with @PreDestroy annotation to destory beans. like ServerNodeManager,HostManager,TaskResponseService,CuratorZookeeperClient,etc
             springApplicationContext.close();
+            logger.info("springApplicationContext close");
+            try {
+                // thread sleep 60 seconds for quietly stop
+                Thread.sleep(60000L);
+            } catch (Exception e) {
+                logger.warn("thread sleep exception ", e);
+            }
+            // Since close will be executed in hook, so we can't use System.exit here.
+            Runtime.getRuntime().halt(0);
         } catch (Exception e) {
             logger.error("master server stop exception ", e);
+            Runtime.getRuntime().halt(1);
         }
     }
 

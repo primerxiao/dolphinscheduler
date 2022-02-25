@@ -81,8 +81,11 @@
                 #{i}
             </foreach>
         </if>
-        <if test="startTime != null and endTime != null">
-            and t.start_time > #{startTime} and t.start_time <![CDATA[ <= ]]> #{endTime}
+        <if test="startTime != null">
+            and t.start_time <![CDATA[ > ]]> #{startTime}
+        </if>
+        <if test="endTime != null">
+            and t.start_time <![CDATA[ <= ]]> #{endTime}
         </if>
         group by t.state
     </select>
@@ -162,4 +165,10 @@
         </if>
         order by instance.start_time desc
     </select>
+    <update id="updateHostAndSubmitTimeById">
+        update t_ds_task_instance
+        set host        = #{host},
+            submit_time = #{submitTime}
+        where id = #{id}
+    </update>
 </mapper>

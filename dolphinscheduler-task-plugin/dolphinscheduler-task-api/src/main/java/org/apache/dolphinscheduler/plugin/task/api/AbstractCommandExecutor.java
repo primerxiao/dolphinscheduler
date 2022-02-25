@@ -122,10 +122,12 @@ public abstract class AbstractCommandExecutor {
         // merge error information to standard output stream
         processBuilder.redirectErrorStream(true);
 
-        // setting up user to run commands
-        command.add("sudo");
-        command.add("-u");
-        command.add(taskRequest.getTenantCode());
+        // if sudo.enable=true,setting up user to run commands
+        if (OSUtils.isSudoEnable()) {
+            command.add("sudo");
+            command.add("-u");
+            command.add(taskRequest.getTenantCode());
+        }
         command.add(commandInterpreter());
         command.addAll(Collections.emptyList());
         command.add(commandFile);
@@ -307,8 +309,9 @@ public abstract class AbstractCommandExecutor {
      * @param process process
      */
     private void parseProcessOutput(Process process) {
-        String threadLoggerInfoName = String.format(TaskConstants.TASK_LOGGER_THREAD_NAME + "-%s", taskRequest.getTaskAppId());
-        ExecutorService getOutputLogService = newDaemonSingleThreadExecutor(threadLoggerInfoName + "-" + "getOutputLogService");
+        String threadLoggerInfoName = String.format(TaskConstants.TASK_LOGGER_THREAD_NAME_FORMAT,
+                taskRequest.getTaskLogName() + TaskConstants.GET_OUTPUT_LOG_SERVICE);
+        ExecutorService getOutputLogService = newDaemonSingleThreadExecutor(threadLoggerInfoName);
         getOutputLogService.submit(() -> {
             try (BufferedReader inReader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;

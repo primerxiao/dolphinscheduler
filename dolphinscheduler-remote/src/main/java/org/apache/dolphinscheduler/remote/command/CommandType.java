@@ -99,6 +99,11 @@ public enum CommandType {
     TASK_KILL_RESPONSE,
 
     /**
+     * kill task response ack
+     */
+    TASK_KILL_RESPONSE_ACK,
+
+    /**
      * HEART_BEAT
      */
     HEART_BEAT,
@@ -136,5 +141,10 @@ public enum CommandType {
     /**
      * state event request
      */
-    STATE_EVENT_REQUEST;
+    STATE_EVENT_REQUEST,
+
+    /**
+     * cache expire
+     */
+    CACHE_EXPIRE;
 }

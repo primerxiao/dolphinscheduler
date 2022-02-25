@@ -97,7 +97,7 @@ public class TaskDefinitionServiceImplTest {
             + "\"workerGroup\":\"default\",\"failRetryTimes\":0,\"failRetryInterval\":0,\"timeoutFlag\":0,"
             + "\"timeoutNotifyStrategy\":0,\"timeout\":0,\"delayTime\":0,\"resourceIds\":\"\"}]";
         List<TaskDefinitionLog> taskDefinitions = JSONUtils.toList(createTaskDefinitionJson, TaskDefinitionLog.class);
-        Mockito.when(processService.saveTaskDefine(loginUser, projectCode, taskDefinitions)).thenReturn(1);
+        Mockito.when(processService.saveTaskDefine(loginUser, projectCode, taskDefinitions, Boolean.TRUE)).thenReturn(1);
         Map<String, Object> relation = taskDefinitionService
             .createTaskDefinition(loginUser, projectCode, createTaskDefinitionJson);
         Assert.assertEquals(Status.SUCCESS, relation.get(Constants.STATUS));
@@ -317,6 +317,7 @@ public class TaskDefinitionServiceImplTest {
         Mockito.when(taskDefinitionMapper.queryByCode(taskCode)).thenReturn(taskDefinition);
         TaskDefinitionLog taskDefinitionLog = new TaskDefinitionLog(taskDefinition);
         Mockito.when(taskDefinitionLogMapper.queryByDefinitionCodeAndVersion(taskCode, taskDefinition.getVersion())).thenReturn(taskDefinitionLog);
+
         Map<String, Object> offlineTaskResult = taskDefinitionService.releaseTaskDefinition(loginUser, projectCode, taskCode, ReleaseState.OFFLINE);
         Assert.assertEquals(Status.SUCCESS, offlineTaskResult.get(Constants.STATUS));
 

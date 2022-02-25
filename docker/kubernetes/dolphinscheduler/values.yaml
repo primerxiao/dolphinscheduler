@@ -23,7 +23,7 @@ timezone: "Asia/Shanghai"
 
 image:
   repository: "apache/dolphinscheduler"
-  tag: "2.0.1"
+  tag: "2.0.4"
   pullPolicy: "IfNotPresent"
   pullSecret: ""
 
@@ -53,6 +53,10 @@ externalDatabase:
 ## If not exists external zookeeper, by default, Dolphinscheduler's zookeeper will use it.
 zookeeper:
   enabled: true
+  tickTime: 3000
+  maxSessionTimeout: 60000
+  initLimit: 300
+  maxClientCnxns: 2000
   fourlwCommandsWhitelist: "srvr,ruok,wchs,cons"
   persistence:
     enabled: false
@@ -100,6 +104,9 @@ common:
     HIVE_HOME: "/opt/soft/hive"
     FLINK_HOME: "/opt/soft/flink"
     DATAX_HOME: "/opt/soft/datax"
+    SESSION_TIMEOUT_MS: 60000
+    ORG_QUARTZ_THREADPOOL_THREADCOUNT: "25"
+    ORG_QUARTZ_SCHEDULER_BATCHTRIGGERACQUISTITIONMAXCOUNT: "1"
   ## Shared storage persistence mounted into api, master and worker, such as Hadoop, Spark, Flink and DataX binary package
   sharedStoragePersistence:
     enabled: false
@@ -148,6 +155,7 @@ master:
   #     cpu: "500m"
   ## Configmap
   configmap:
+    LOGGER_SERVER_OPTS: "-Xms512m -Xmx512m -Xmn256m"
     MASTER_SERVER_OPTS: "-Xms1g -Xmx1g -Xmn512m"
     MASTER_EXEC_THREADS: "100"
     MASTER_EXEC_TASK_NUM: "20"
@@ -158,6 +166,11 @@ master:
     MASTER_TASK_COMMIT_INTERVAL: "1000"
     MASTER_MAX_CPULOAD_AVG: "-1"
     MASTER_RESERVED_MEMORY: "0.3"
+    MASTER_FAILOVER_INTERVAL: 10
+    MASTER_KILL_YARN_JOB_WHEN_HANDLE_FAILOVER: "true"
+    ORG_QUARTZ_THREADPOOL_THREADCOUNT: "25"
+    ORG_QUARTZ_SCHEDULER_BATCHTRIGGERACQUISTITIONMAXCOUNT: "1"
+    MASTER_PERSIST_EVENT_STATE_THREADS: 10
   ## Periodic probe of container liveness. Container will be restarted if the probe fails. Cannot be updated.
   ## More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
   livenessProbe:
@@ -225,6 +238,7 @@ worker:
     WORKER_MAX_CPULOAD_AVG: "-1"
     WORKER_RESERVED_MEMORY: "0.3"
     WORKER_GROUPS: "default"
+    WORKER_RETRY_REPORT_TASK_STATUS_INTERVAL: 600
   ## Periodic probe of container liveness. Container will be restarted if the probe fails. Cannot be updated.
   ## More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
   livenessProbe:
